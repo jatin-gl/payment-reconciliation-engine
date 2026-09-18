@@ -186,7 +186,8 @@ func TestDiscrepancyID_DeterministicAndStable(t *testing.T) {
 		)
 		return d[0].ID
 	}
-	if run() != run() {
-		t.Error("discrepancy IDs must be deterministic across identical runs")
+	first, second := run(), run()
+	if first != second {
+		t.Errorf("discrepancy IDs must be deterministic across identical runs: %q != %q", first, second)
 	}
 }

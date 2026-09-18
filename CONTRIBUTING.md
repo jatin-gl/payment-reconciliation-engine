@@ -21,7 +21,7 @@ Run the full local gate — CI runs the same checks:
 
 ```bash
 make fmt   # gofmt
-make vet   # go vet
+make lint  # go vet + staticcheck
 make test  # go test ./... -race
 ```
 

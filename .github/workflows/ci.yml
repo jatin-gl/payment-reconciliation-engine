@@ -31,6 +31,12 @@ jobs:
       - name: Vet
         run: go vet ./...
 
+      - name: Staticcheck
+        uses: dominikh/staticcheck-action@v1
+        with:
+          version: latest
+          install-go: false
+
       - name: Test (race + coverage)
         run: go test ./... -race -coverprofile=coverage.out
 

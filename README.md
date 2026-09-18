@@ -94,7 +94,9 @@ bin/reconcile \
 | `--out` | stdout | Write output to this file |
 | `--high` | `10000` | High-impact threshold, minor units (\$100) |
 | `--critical` | `100000` | Critical-impact threshold, minor units (\$1,000) |
-| `--fail-on-discrepancy` | `false` | Exit non-zero if any discrepancy is found — gate a cron/CI job |
+| `--fail-on-discrepancy` | `false` | Exit with code `2` if any discrepancy is found — gate a cron/CI job |
+
+Exit codes: `0` clean, `1` usage/runtime error, `2` discrepancies found (with `--fail-on-discrepancy`).
 
 ## HTTP service
 
@@ -153,20 +155,26 @@ core is a pure, exhaustively-tested function. See
 
 ```bash
 make test    # go test ./... -race
+make lint    # go vet + staticcheck
 make cover   # writes coverage.html
 ```
 
 The suite covers the money type's parsing edge cases, every discrepancy type via
 table-driven matcher tests, severity escalation, CSV ingest error paths, an
-ingest→engine→API integration path over the committed fixtures, and the JSON
-wire shape.
+ingest→engine→API integration path over the committed fixtures, the CLI
+(text/json output and exit codes), and the JSON wire shape. CI additionally runs
+`gofmt`, `go vet`, and `staticcheck`.
 
 ## Companion project
 
 [**recon-dispute-agent**](https://github.com/jatin-gl/recon-dispute-agent) — an
 AI agentic workflow (Claude + tool-calling) that ingests this engine's report,
 investigates each discrepancy with tools, classifies the root cause, and proposes
-a resolution with a verification loop.
+a resolution with a verification loop. The two compose in one pipeline:
+
+```bash
+reconcile --psp settlement.csv --ledger ledger.csv --format json | recon-agent -
+```
 
 ## License
 

@@ -19,7 +19,9 @@ cover: ## Run tests and open an HTML coverage report
 	$(GO) tool cover -html=coverage.out -o coverage.html
 	@echo "coverage report written to coverage.html"
 
-lint: vet ## Alias for vet (add golangci-lint here if desired)
+lint: vet ## Run vet + staticcheck (staticcheck installed on demand if missing)
+	@command -v staticcheck >/dev/null 2>&1 || $(GO) install honnef.co/go/tools/cmd/staticcheck@latest
+	staticcheck ./...
 
 fmt: ## Format all Go source
 	$(GO) fmt ./...
