@@ -61,14 +61,14 @@ func DefaultLedgerColumns() ColumnMap {
 func DefaultStatusMap() map[string]model.Status {
 	return map[string]model.Status{
 		"pending":    model.StatusPending,
-		"authorized": model.StatusCaptured,
+		"authorized": model.StatusAuthorized,
 		"captured":   model.StatusCaptured,
 		"paid":       model.StatusCaptured,
 		"settled":    model.StatusSettled,
 		"payout":     model.StatusSettled,
 		"refunded":   model.StatusRefunded,
 		"refund":     model.StatusRefunded,
-		"chargeback": model.StatusRefunded,
+		"chargeback": model.StatusChargeback,
 		"failed":     model.StatusFailed,
 		"declined":   model.StatusFailed,
 	}
@@ -158,7 +158,7 @@ func rowToTransaction(rec []string, col map[string]int, source model.Source, cm 
 		return model.Transaction{}, fmt.Errorf("empty currency")
 	}
 
-	amountMinor, err := money.ParseMinor(get(cm.Amount))
+	amountMinor, err := money.ParseMinor(get(cm.Amount), currency)
 	if err != nil {
 		return model.Transaction{}, fmt.Errorf("amount: %w", err)
 	}
@@ -166,7 +166,7 @@ func rowToTransaction(rec []string, col map[string]int, source model.Source, cm 
 	fee := money.Zero(currency)
 	if cm.Fee != "" {
 		if raw := get(cm.Fee); raw != "" {
-			feeMinor, err := money.ParseMinor(raw)
+			feeMinor, err := money.ParseMinor(raw, currency)
 			if err != nil {
 				return model.Transaction{}, fmt.Errorf("fee: %w", err)
 			}

@@ -32,7 +32,11 @@ type Transaction struct {
 	Amount     Money  `json:"amount"`
 	Fee        Money  `json:"fee"`
 	Status     string `json:"status"`
-	Timestamp  string `json:"timestamp,omitempty"`
+	// RawStatus is the source's original, un-normalized status string. It lets a
+	// consumer tell apart two records whose normalized status is both "unknown"
+	// (e.g. "voided" vs "expired"). Omitted when the source had no status.
+	RawStatus string `json:"raw_status,omitempty"`
+	Timestamp string `json:"timestamp,omitempty"`
 }
 
 func transactionDTO(t *model.Transaction) *Transaction {
@@ -46,6 +50,7 @@ func transactionDTO(t *model.Transaction) *Transaction {
 		Amount:     moneyDTO(t.Amount),
 		Fee:        moneyDTO(t.Fee),
 		Status:     string(t.Status),
+		RawStatus:  t.RawStatus,
 	}
 	if !t.Timestamp.IsZero() {
 		dto.Timestamp = t.Timestamp.UTC().Format(time.RFC3339)

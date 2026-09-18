@@ -2,6 +2,7 @@ package recon
 
 import (
 	"os"
+	"sync"
 	"testing"
 	"time"
 
@@ -87,6 +88,32 @@ func TestReconcile_EmptyInputs(t *testing.T) {
 	report := fixedEngine().Reconcile(nil, nil)
 	if report.Summary.DiscrepancyCount != 0 || report.Summary.MatchedCount != 0 {
 		t.Errorf("empty inputs should yield empty report, got %+v", report.Summary)
+	}
+}
+
+// TestReconcile_ConcurrentUniqueIDs exercises the engine the way the HTTP server
+// does — one Engine shared across many goroutines. Run with -race, it guards
+// against a data race on the id counter and asserts every run gets a unique id.
+func TestReconcile_ConcurrentUniqueIDs(t *testing.T) {
+	e := New(matcher.DefaultConfig()) // real (non-fixed) id generator
+	const n = 100
+	ids := make([]string, n)
+	var wg sync.WaitGroup
+	for i := range n {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			ids[i] = e.Reconcile([]model.Transaction{p("A", 10000, 0, model.StatusSettled)}, nil).ReportID
+		}(i)
+	}
+	wg.Wait()
+
+	seen := make(map[string]bool, n)
+	for _, id := range ids {
+		if id == "" || seen[id] {
+			t.Errorf("expected unique non-empty report ids under concurrency; duplicate/empty: %q", id)
+		}
+		seen[id] = true
 	}
 }
 

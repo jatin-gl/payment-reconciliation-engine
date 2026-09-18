@@ -25,12 +25,19 @@ const (
 type Status string
 
 const (
-	StatusPending  Status = "pending"
-	StatusCaptured Status = "captured"
-	StatusSettled  Status = "settled"
-	StatusRefunded Status = "refunded"
-	StatusFailed   Status = "failed"
-	StatusUnknown  Status = "unknown"
+	StatusPending Status = "pending"
+	// StatusAuthorized is an authorization hold — funds reserved but not captured.
+	// It is deliberately distinct from StatusCaptured so an "authorized on one
+	// side, captured on the other" divergence surfaces as a status mismatch.
+	StatusAuthorized Status = "authorized"
+	StatusCaptured   Status = "captured"
+	StatusSettled    Status = "settled"
+	StatusRefunded   Status = "refunded"
+	// StatusChargeback is a disputed reversal — materially different from a
+	// voluntary refund, so it is not collapsed into StatusRefunded.
+	StatusChargeback Status = "chargeback"
+	StatusFailed     Status = "failed"
+	StatusUnknown    Status = "unknown"
 )
 
 // Transaction is a single payment record from one source.

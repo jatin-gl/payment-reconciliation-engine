@@ -88,8 +88,13 @@ func subChecked(a, b int64) (int64, bool) {
 	return d, true
 }
 
-// Abs returns the absolute value.
+// Abs returns the absolute value. math.MinInt64 has no positive int64
+// counterpart, so it saturates to math.MaxInt64 rather than wrapping back to a
+// negative value (this only matters for pathological inputs the parser rejects).
 func (m Money) Abs() Money {
+	if m.amount == math.MinInt64 {
+		return Money{amount: math.MaxInt64, currency: m.currency}
+	}
 	if m.amount < 0 {
 		return Money{amount: -m.amount, currency: m.currency}
 	}
@@ -124,29 +129,38 @@ func Exponent(currency string) int {
 // String renders the amount using the currency's minor-unit exponent (so JPY
 // shows no decimals and BHD shows three). It is a display helper, not a
 // settlement format; downstream systems should read Amount() and Currency().
+//
+// It works on the decimal string of the amount rather than negating it, so it is
+// correct even at math.MinInt64 (which cannot be negated as an int64).
 func (m Money) String() string {
 	exp := Exponent(m.currency)
+	digits := strconv.FormatInt(m.amount, 10)
 	sign := ""
-	a := m.amount
-	if a < 0 {
+	if digits[0] == '-' {
 		sign = "-"
-		a = -a
+		digits = digits[1:]
 	}
 	if exp == 0 {
-		return fmt.Sprintf("%s%d %s", sign, a, m.currency)
+		return sign + digits + " " + m.currency
 	}
-	div := int64(1)
-	for i := 0; i < exp; i++ {
-		div *= 10
+	for len(digits) <= exp {
+		digits = "0" + digits
 	}
-	return fmt.Sprintf("%s%d.%0*d %s", sign, a/div, exp, a%div, m.currency)
+	major, minor := digits[:len(digits)-exp], digits[len(digits)-exp:]
+	return sign + major + "." + minor + " " + m.currency
 }
 
-// ParseMinor parses a decimal string like "105.00" into minor units. It supports
-// an optional sign and up to two fractional digits. It intentionally rejects
-// scientific notation and more than two decimals so that malformed settlement
-// rows surface as errors instead of silently rounding.
-func ParseMinor(s string) (int64, error) {
+// ParseMinor parses a decimal string like "105.00" into minor units for the
+// given currency, using that currency's minor-unit exponent: "105" is 10500 for
+// USD (2 decimals), 105 for JPY (0 decimals), and 105000 for BHD (3 decimals).
+//
+// It supports an optional sign, rejects scientific notation, and rejects more
+// fractional digits than the currency has (trailing zeros beyond that precision
+// are allowed, so "105.00" is valid for JPY) so that malformed or over-precise
+// settlement rows surface as errors instead of silently rounding. Overflow of
+// int64 is an error, never a silent wrap.
+func ParseMinor(s, currency string) (int64, error) {
+	exp := Exponent(currency)
 	s = strings.TrimSpace(s)
 	if s == "" {
 		return 0, fmt.Errorf("money: empty amount")
@@ -167,34 +181,42 @@ func ParseMinor(s string) (int64, error) {
 	if err != nil {
 		return 0, fmt.Errorf("money: invalid amount %q: %w", s, err)
 	}
+
 	var minor int64
-	if hasFrac {
-		switch len(fracPart) {
-		case 0:
-			// "105." — treat as zero fractional part.
-		case 1:
+	if hasFrac && fracPart != "" {
+		// Any significant digit beyond the currency's precision is an error;
+		// trailing zeros are tolerated (e.g. "105.00" for a 0-decimal currency).
+		if len(fracPart) > exp {
+			for _, c := range fracPart[exp:] {
+				if c != '0' {
+					return 0, fmt.Errorf("money: amount %q has more than %d decimal place(s) for %s",
+						s, exp, strings.ToUpper(strings.TrimSpace(currency)))
+				}
+			}
+			fracPart = fracPart[:exp]
+		}
+		if exp > 0 && fracPart != "" {
 			d, err := strconv.ParseInt(fracPart, 10, 64)
 			if err != nil {
 				return 0, fmt.Errorf("money: invalid fractional part %q: %w", fracPart, err)
 			}
-			minor = d * 10
-		case 2:
-			d, err := strconv.ParseInt(fracPart, 10, 64)
-			if err != nil {
-				return 0, fmt.Errorf("money: invalid fractional part %q: %w", fracPart, err)
+			for i := len(fracPart); i < exp; i++ { // right-pad to exp digits
+				d *= 10
 			}
 			minor = d
-		default:
-			return 0, fmt.Errorf("money: amount %q has more than 2 decimal places", s)
 		}
 	}
-	// Guard against int64 overflow. Silently wrapping a large settlement amount
-	// to a wrong (or negative) value would defeat the entire purpose of exact
-	// integer money handling. minor is in [0,99] here.
-	if major > (math.MaxInt64-minor)/100 {
+
+	scale := int64(1)
+	for i := 0; i < exp; i++ {
+		scale *= 10
+	}
+	// Guard against int64 overflow: a wrapped (or negative) total would defeat
+	// the entire purpose of exact integer money handling. minor is in [0, scale).
+	if major > (math.MaxInt64-minor)/scale {
 		return 0, fmt.Errorf("money: amount %q overflows int64", s)
 	}
-	total := major*100 + minor
+	total := major*scale + minor
 	if neg {
 		total = -total
 	}

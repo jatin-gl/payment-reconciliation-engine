@@ -132,6 +132,26 @@ func TestParseCSV_CapturesRawStatusForUnmapped(t *testing.T) {
 	}
 }
 
+func TestParseCSV_CurrencyExponentAmounts(t *testing.T) {
+	cm := ColumnMap{MatchKey: "ref", ExternalID: "ref", Amount: "amt", Currency: "ccy"}
+	// JPY (0-decimal): ¥5000 is 5000 minor units, not 500000.
+	got, err := ParseCSV(strings.NewReader("ref,amt,ccy\nT1,5000,JPY\n"), model.SourcePSP, cm, DefaultStatusMap())
+	if err != nil {
+		t.Fatalf("JPY: %v", err)
+	}
+	if got[0].Amount.Amount() != 5000 {
+		t.Errorf("JPY 5000 -> %d minor units, want 5000", got[0].Amount.Amount())
+	}
+	// BHD (3-decimal): 1.234 is 1234 minor units (was rejected before the fix).
+	got, err = ParseCSV(strings.NewReader("ref,amt,ccy\nT1,1.234,BHD\n"), model.SourcePSP, cm, DefaultStatusMap())
+	if err != nil {
+		t.Fatalf("BHD: %v", err)
+	}
+	if got[0].Amount.Amount() != 1234 {
+		t.Errorf("BHD 1.234 -> %d minor units, want 1234", got[0].Amount.Amount())
+	}
+}
+
 func TestParseCSV_OptionalFeeAndTimestampOmitted(t *testing.T) {
 	// A minimal layout without fee or timestamp columns should still parse.
 	cm := ColumnMap{MatchKey: "ref", ExternalID: "ref", Amount: "amt", Currency: "ccy"}

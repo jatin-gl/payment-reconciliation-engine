@@ -7,40 +7,50 @@ import (
 
 func TestParseMinor(t *testing.T) {
 	tests := []struct {
-		in      string
-		want    int64
-		wantErr bool
+		in       string
+		currency string
+		want     int64
+		wantErr  bool
 	}{
-		{"105.00", 10500, false},
-		{"105", 10500, false},
-		{"0.01", 1, false},
-		{"0.1", 10, false},
-		{"-4.50", -450, false},
-		{"+12.34", 1234, false},
-		{"105.", 10500, false},
-		{"1000000.99", 100000099, false},
-		{"", 0, true},
-		{"abc", 0, true},
-		{"1.234", 0, true},                 // more than 2 decimals must error, not round
-		{"1.2.3", 0, true},                 // Cut splits on the first '.', so "2.3" trips the >2-decimals check
-		{"1e3", 0, true},                   // scientific notation rejected
-		{"100000000000000000.00", 0, true}, // overflows int64 -> must error, never wrap
-		{"92233720368547758.08", 0, true},  // just past MaxInt64 minor units
+		// 2-decimal (USD).
+		{"105.00", "USD", 10500, false},
+		{"105", "USD", 10500, false},
+		{"0.01", "USD", 1, false},
+		{"0.1", "USD", 10, false},
+		{"-4.50", "USD", -450, false},
+		{"+12.34", "USD", 1234, false},
+		{"105.", "USD", 10500, false},
+		{"1000000.99", "USD", 100000099, false},
+		{"", "USD", 0, true},
+		{"abc", "USD", 0, true},
+		{"1.234", "USD", 0, true},                 // more than 2 decimals must error, not round
+		{"1.2.3", "USD", 0, true},                 // Cut splits on the first '.', so "2.3" trips the >2-decimals check
+		{"1e3", "USD", 0, true},                   // scientific notation rejected
+		{"100000000000000000.00", "USD", 0, true}, // overflows int64 -> must error, never wrap
+		{"92233720368547758.08", "USD", 0, true},  // just past MaxInt64 minor units
+		// 0-decimal (JPY): the value is unchanged; a significant fractional digit is an error.
+		{"5000", "JPY", 5000, false},
+		{"105.00", "JPY", 105, false}, // trailing zeros tolerated
+		{"105.5", "JPY", 0, true},     // significant fractional digit for a 0-decimal currency
+		// 3-decimal (BHD).
+		{"1.234", "BHD", 1234, false},
+		{"1.5", "BHD", 1500, false}, // right-padded to 3 digits
+		{"1.2345", "BHD", 0, true},  // too many decimals for a 3-decimal currency
 	}
 	for _, tt := range tests {
-		got, err := ParseMinor(tt.in)
+		got, err := ParseMinor(tt.in, tt.currency)
 		if tt.wantErr {
 			if err == nil {
-				t.Errorf("ParseMinor(%q) = %d, want error", tt.in, got)
+				t.Errorf("ParseMinor(%q, %q) = %d, want error", tt.in, tt.currency, got)
 			}
 			continue
 		}
 		if err != nil {
-			t.Errorf("ParseMinor(%q) unexpected error: %v", tt.in, err)
+			t.Errorf("ParseMinor(%q, %q) unexpected error: %v", tt.in, tt.currency, err)
 			continue
 		}
 		if got != tt.want {
-			t.Errorf("ParseMinor(%q) = %d, want %d", tt.in, got, tt.want)
+			t.Errorf("ParseMinor(%q, %q) = %d, want %d", tt.in, tt.currency, got, tt.want)
 		}
 	}
 }

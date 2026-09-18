@@ -52,6 +52,9 @@ func newHTTPServer(addr string, h http.Handler) *http.Server {
 func main() {
 	addr, cfg, err := parseFlags(os.Args[1:])
 	if err != nil {
+		if errors.Is(err, flag.ErrHelp) {
+			return // -h/--help already printed usage; exit 0 by convention
+		}
 		os.Exit(2)
 	}
 

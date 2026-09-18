@@ -5,6 +5,7 @@ package recon
 import (
 	"fmt"
 	"sort"
+	"sync/atomic"
 	"time"
 
 	"github.com/jatin-gl/payment-reconciliation-engine/internal/matcher"
@@ -14,6 +15,11 @@ import (
 
 // Engine runs reconciliations. Now and NewID are injectable so runs are
 // deterministic under test; the zero value is not usable — construct with New.
+//
+// An Engine built with New is safe for concurrent use by multiple goroutines
+// (the HTTP server shares a single Engine across requests): its config and
+// clock are read-only after construction, and the default id generator uses an
+// atomic counter. If you inject a custom NewID, make it concurrency-safe too.
 type Engine struct {
 	Config matcher.Config
 	Now    func() time.Time
@@ -22,13 +28,12 @@ type Engine struct {
 
 // New returns an Engine with the given config and wall-clock defaults.
 func New(cfg matcher.Config) *Engine {
-	seq := 0
+	var seq atomic.Int64
 	return &Engine{
 		Config: cfg,
 		Now:    time.Now,
 		NewID: func() string {
-			seq++
-			return fmt.Sprintf("rpt_%d_%d", time.Now().UnixNano(), seq)
+			return fmt.Sprintf("rpt_%d_%d", time.Now().UnixNano(), seq.Add(1))
 		},
 	}
 }

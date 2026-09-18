@@ -237,6 +237,17 @@ func TestReconcile_TwoDifferentUnmappedStatusesMismatch(t *testing.T) {
 	}
 }
 
+func TestReconcile_AuthorizedVsCapturedMismatch(t *testing.T) {
+	// An auth hold is materially different from a capture; they must not be
+	// collapsed into the same normalized status.
+	p := txn(model.SourcePSP, "TXN-1", "p", 10000, 0, "USD", model.StatusAuthorized)
+	l := txn(model.SourceLedger, "TXN-1", "l", 10000, 0, "USD", model.StatusCaptured)
+	got := Reconcile([]model.Transaction{p}, []model.Transaction{l}, DefaultConfig())
+	if findByType(got, model.StatusMismatch) == nil {
+		t.Fatalf("authorized vs captured must be a status mismatch, got %+v", got)
+	}
+}
+
 func TestReconcile_SameUnmappedStatusNoMismatch(t *testing.T) {
 	got := Reconcile(
 		[]model.Transaction{unmapped(model.SourcePSP, "p", "held")},

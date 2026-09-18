@@ -70,7 +70,8 @@ of the engine is that a one-cent drift is a real, detectable finding.
 | `source` | string | `psp` \| `ledger` |
 | `amount` | Money | Gross amount |
 | `fee` | Money | Processor fee (often `0` on the ledger side) |
-| `status` | string | Normalized: `pending` `captured` `settled` `refunded` `failed` `unknown` |
+| `status` | string | Normalized: `pending` `authorized` `captured` `settled` `refunded` `chargeback` `failed` `unknown` |
+| `raw_status` | string | The source's original, un-normalized status; omitted when the source had none. Distinguishes two records whose normalized `status` is both `unknown`. |
 | `timestamp` | string | RFC 3339; omitted when the source had none |
 
 ## Discrepancy types
