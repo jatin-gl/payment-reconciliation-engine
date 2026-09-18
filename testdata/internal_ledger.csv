@@ -1,0 +1,7 @@
+psp_reference,entry_id,amount,fee,currency,status,booked_at
+TXN-1001,L-1,105.00,3.00,USD,settled,2026-01-15
+TXN-1002,L-2,199.00,4.00,USD,settled,2026-01-15
+TXN-1004,L-4,75.00,0.00,USD,settled,2026-01-15
+TXN-1005,L-5,80.00,4.50,USD,settled,2026-01-15
+TXN-1006,L-6,120.00,3.60,USD,refunded,2026-01-15
+TXN-1007,L-7,90.00,2.70,USD,settled,2026-01-15
