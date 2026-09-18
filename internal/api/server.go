@@ -60,6 +60,12 @@ func (s *Server) handleReconcile(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "could not parse multipart form (send psp and ledger as file fields)", err)
 		return
 	}
+	// Remove any on-disk temp files multipart may have spilled once we're done.
+	defer func() {
+		if r.MultipartForm != nil {
+			_ = r.MultipartForm.RemoveAll()
+		}
+	}()
 
 	psp, err := parseUpload(r, "psp", model.SourcePSP, ingest.DefaultPSPColumns())
 	if err != nil {

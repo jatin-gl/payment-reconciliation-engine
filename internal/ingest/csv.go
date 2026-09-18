@@ -93,9 +93,20 @@ func ParseCSV(r io.Reader, source model.Source, cm ColumnMap, statusMap map[stri
 	if err != nil {
 		return nil, fmt.Errorf("reading header: %w", err)
 	}
+	// Strip a leading UTF-8 BOM that Excel/Windows exports commonly prepend to
+	// the first cell; without this the first column name never matches its mapping.
+	if len(header) > 0 {
+		header[0] = strings.TrimPrefix(header[0], "\ufeff")
+	}
 	col := make(map[string]int, len(header))
 	for i, h := range header {
-		col[strings.TrimSpace(h)] = i
+		name := strings.TrimSpace(h)
+		if _, dup := col[name]; dup {
+			// A duplicate header would silently shadow one column with another and
+			// mis-parse amounts; fail loudly instead.
+			return nil, fmt.Errorf("duplicate column %q in header", name)
+		}
+		col[name] = i
 	}
 
 	// Required columns must be present up front, so a misconfigured mapping fails
@@ -135,6 +146,13 @@ func rowToTransaction(rec []string, col map[string]int, source model.Source, cm 
 		return strings.TrimSpace(rec[idx])
 	}
 
+	matchKey := get(cm.MatchKey)
+	if matchKey == "" {
+		// A blank reference cannot be reconciled against the other side; treating
+		// several blank keys as "duplicates of empty" would be misleading.
+		return model.Transaction{}, fmt.Errorf("empty match key")
+	}
+
 	currency := get(cm.Currency)
 	if currency == "" {
 		return model.Transaction{}, fmt.Errorf("empty currency")
@@ -156,9 +174,10 @@ func rowToTransaction(rec []string, col map[string]int, source model.Source, cm 
 		}
 	}
 
+	rawStatus := get(cm.Status)
 	status := model.StatusUnknown
 	if cm.Status != "" {
-		if s, ok := statusMap[strings.ToLower(get(cm.Status))]; ok {
+		if s, ok := statusMap[strings.ToLower(rawStatus)]; ok {
 			status = s
 		}
 	}
@@ -181,12 +200,13 @@ func rowToTransaction(rec []string, col map[string]int, source model.Source, cm 
 	}
 
 	return model.Transaction{
-		MatchKey:   get(cm.MatchKey),
+		MatchKey:   matchKey,
 		ExternalID: get(cm.ExternalID),
 		Source:     source,
 		Amount:     money.New(amountMinor, currency),
 		Fee:        fee,
 		Status:     status,
+		RawStatus:  rawStatus,
 		Timestamp:  ts,
 		Raw:        raw,
 	}, nil

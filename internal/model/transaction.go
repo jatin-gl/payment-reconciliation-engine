@@ -46,15 +46,13 @@ type Transaction struct {
 	// Fee is the processor fee. The ledger side often reports this as zero.
 	Fee    money.Money
 	Status Status
+	// RawStatus is the source's original, un-normalized status string. It lets the
+	// matcher distinguish two *different* provider statuses that both normalize to
+	// StatusUnknown (e.g. "voided" vs "expired"), which would otherwise be hidden.
+	RawStatus string
 	// Timestamp is when the source system recorded the transaction.
 	Timestamp time.Time
 	// Raw preserves the original parsed row so a human (or the downstream AI
 	// agent) can audit exactly what the source reported.
 	Raw map[string]string
-}
-
-// Net returns Amount minus Fee. It errors only on a currency mismatch between
-// the two, which would indicate a malformed record rather than a real net value.
-func (t Transaction) Net() (money.Money, error) {
-	return t.Amount.Sub(t.Fee)
 }

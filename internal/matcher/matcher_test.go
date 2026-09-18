@@ -1,6 +1,7 @@
 package matcher
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/jatin-gl/payment-reconciliation-engine/internal/model"
@@ -189,5 +190,60 @@ func TestDiscrepancyID_DeterministicAndStable(t *testing.T) {
 	first, second := run(), run()
 	if first != second {
 		t.Errorf("discrepancy IDs must be deterministic across identical runs: %q != %q", first, second)
+	}
+}
+
+func TestReconcile_DuplicateInLedgerAggregatesExposure(t *testing.T) {
+	// Two ledger rows for one key: exposure is the SUM, and the aggregate crosses
+	// the critical threshold even though neither row alone would.
+	ledgerSide := []model.Transaction{
+		ledger("TXN-1", "l1", 60000, 0),
+		ledger("TXN-1", "l2", 60000, 0),
+	}
+	got := Reconcile(nil, ledgerSide, DefaultConfig())
+	d := findByType(got, model.DuplicateInLedger)
+	if d == nil {
+		t.Fatalf("expected DUPLICATE_IN_LEDGER, got %+v", got)
+	}
+	if d.MonetaryImpact.Amount() != 120000 {
+		t.Errorf("impact = %d, want 120000 (sum of both rows, not just the first)", d.MonetaryImpact.Amount())
+	}
+	if d.Severity != model.SeverityCritical {
+		t.Errorf("severity = %s, want critical (aggregate exposure >= threshold)", d.Severity)
+	}
+}
+
+func unmapped(source model.Source, extID, rawStatus string) model.Transaction {
+	return model.Transaction{
+		MatchKey: "TXN-1", ExternalID: extID, Source: source,
+		Amount: money.New(10000, "USD"), Fee: money.New(0, "USD"),
+		Status: model.StatusUnknown, RawStatus: rawStatus,
+	}
+}
+
+func TestReconcile_TwoDifferentUnmappedStatusesMismatch(t *testing.T) {
+	got := Reconcile(
+		[]model.Transaction{unmapped(model.SourcePSP, "p", "voided")},
+		[]model.Transaction{unmapped(model.SourceLedger, "l", "expired")},
+		DefaultConfig(),
+	)
+	d := findByType(got, model.StatusMismatch)
+	if d == nil {
+		t.Fatalf("two different unmapped statuses must mismatch, got %+v", got)
+	}
+	// The human-facing detail must show the raw statuses, not two "unknown"s.
+	if !strings.Contains(d.Detail, "voided") || !strings.Contains(d.Detail, "expired") {
+		t.Errorf("detail should surface raw statuses, got %q", d.Detail)
+	}
+}
+
+func TestReconcile_SameUnmappedStatusNoMismatch(t *testing.T) {
+	got := Reconcile(
+		[]model.Transaction{unmapped(model.SourcePSP, "p", "held")},
+		[]model.Transaction{unmapped(model.SourceLedger, "l", "held")},
+		DefaultConfig(),
+	)
+	if findByType(got, model.StatusMismatch) != nil {
+		t.Errorf("identical unmapped statuses should not mismatch, got %+v", got)
 	}
 }

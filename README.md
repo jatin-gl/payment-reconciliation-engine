@@ -40,7 +40,7 @@ AI agent that consumes this output and investigates each discrepancy.
   integration point for dashboards, alerting, and the AI dispute agent.
 - **Tested to production standards**: table-driven unit tests, an
   ingest→engine→API integration path over committed fixtures, `-race`, and CI
-  that enforces gofmt + vet + coverage.
+  that enforces gofmt, `go vet`, and `staticcheck`.
 
 ## Quickstart
 
@@ -63,10 +63,10 @@ Reconciliation report rpt_… (contract v1.0)
   Ledger records:   6
   Cleanly matched:  1
   Discrepancies:    6
-  Money at risk:    216.50 USD
+  Money at risk:    306.50 USD
 
 Findings (most severe first):
-  [high    ] DUPLICATE_IN_PSP   TXN-1007   match key "TXN-1007" appears 2 times in PSP settlement
+  [high    ] DUPLICATE_IN_PSP   TXN-1007   match key "TXN-1007" appears 2 times in PSP settlement (total 180.00 USD)
   [high    ] MISSING_IN_PSP     TXN-1004   ledger transaction L-4 (75.00 USD) has no PSP settlement entry
   [high    ] MISSING_IN_LEDGER  TXN-1003   PSP transaction TXN-1003 (50.00 USD) has no ledger entry
   [medium  ] AMOUNT_MISMATCH    TXN-1002   amount mismatch: PSP 200.00 USD vs ledger 199.00 USD

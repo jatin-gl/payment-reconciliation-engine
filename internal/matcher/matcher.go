@@ -20,6 +20,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
+	"strings"
 
 	"github.com/jatin-gl/payment-reconciliation-engine/internal/model"
 	"github.com/jatin-gl/payment-reconciliation-engine/pkg/money"
@@ -54,15 +55,19 @@ func Reconcile(psp, ledger []model.Transaction, cfg Config) []model.Discrepancy 
 	dupLedger := duplicateKeys(ledgerByKey)
 	for key := range dupPSP {
 		recs := pspByKey[key]
-		out = append(out, newDiscrepancy(model.DuplicateInPSP, model.SeverityHigh, key,
-			&recs[0], nil, recs[0].Amount,
-			fmt.Sprintf("match key %q appears %d times in PSP settlement", key, len(recs))))
+		impact := sumAmounts(recs) // full exposure, not just the first occurrence
+		out = append(out, newDiscrepancy(model.DuplicateInPSP,
+			severityForImpact(model.SeverityHigh, impact, cfg), key,
+			&recs[0], nil, impact,
+			fmt.Sprintf("match key %q appears %d times in PSP settlement (total %s)", key, len(recs), impact)))
 	}
 	for key := range dupLedger {
 		recs := ledgerByKey[key]
-		out = append(out, newDiscrepancy(model.DuplicateInLedger, model.SeverityHigh, key,
-			nil, &recs[0], recs[0].Amount,
-			fmt.Sprintf("match key %q appears %d times in ledger", key, len(recs))))
+		impact := sumAmounts(recs)
+		out = append(out, newDiscrepancy(model.DuplicateInLedger,
+			severityForImpact(model.SeverityHigh, impact, cfg), key,
+			nil, &recs[0], impact,
+			fmt.Sprintf("match key %q appears %d times in ledger (total %s)", key, len(recs), impact)))
 	}
 
 	// One-sided and field-level comparisons over the union of keys.
@@ -128,13 +133,51 @@ func compareFields(p, l model.Transaction, cfg Config) []model.Discrepancy {
 			fmt.Sprintf("fee mismatch: PSP %s vs ledger %s", p.Fee, l.Fee)))
 	}
 
-	if p.Status != l.Status {
+	// Compare effective status, not just the normalized enum: two *different*
+	// unmapped provider statuses (e.g. "voided" vs "expired") both normalize to
+	// StatusUnknown and would otherwise be treated as equal, hiding a real
+	// lifecycle divergence.
+	if effectiveStatus(p) != effectiveStatus(l) {
 		out = append(out, newDiscrepancy(model.StatusMismatch, model.SeverityMedium, p.MatchKey,
 			&p, &l, money.Zero(p.Amount.Currency()),
-			fmt.Sprintf("status mismatch: PSP %q vs ledger %q", p.Status, l.Status)))
+			fmt.Sprintf("status mismatch: PSP %q vs ledger %q", displayStatus(p), displayStatus(l))))
 	}
 
 	return out
+}
+
+// effectiveStatus returns a comparable status string: the normalized status when
+// known, or a raw-tagged value when the source status was unmapped.
+func effectiveStatus(t model.Transaction) string {
+	if t.Status == model.StatusUnknown && t.RawStatus != "" {
+		return "raw:" + strings.ToLower(t.RawStatus)
+	}
+	return string(t.Status)
+}
+
+// displayStatus renders a human-readable status: the raw source string when the
+// status was unmapped, otherwise the normalized value.
+func displayStatus(t model.Transaction) string {
+	if t.Status == model.StatusUnknown && t.RawStatus != "" {
+		return t.RawStatus
+	}
+	return string(t.Status)
+}
+
+// sumAmounts totals the gross amounts of the given records. In a single-currency
+// reconciliation they share a currency; a cross-currency record is skipped rather
+// than producing a bogus sum. It represents the full exposure of a duplicate key.
+func sumAmounts(recs []model.Transaction) money.Money {
+	if len(recs) == 0 {
+		return money.Money{}
+	}
+	total := recs[0].Amount
+	for _, r := range recs[1:] {
+		if sum, err := total.Add(r.Amount); err == nil {
+			total = sum
+		}
+	}
+	return total
 }
 
 // severityForImpact escalates a base severity according to the absolute monetary

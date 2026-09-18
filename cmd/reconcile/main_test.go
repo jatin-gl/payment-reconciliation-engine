@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -22,7 +24,7 @@ func TestRun_TextOutput(t *testing.T) {
 		t.Fatalf("run: %v", err)
 	}
 	text := out.String()
-	for _, want := range []string{"Discrepancies:    6", "DUPLICATE_IN_PSP", "Money at risk:    216.50 USD"} {
+	for _, want := range []string{"Discrepancies:    6", "DUPLICATE_IN_PSP", "Money at risk:    306.50 USD"} {
 		if !strings.Contains(text, want) {
 			t.Errorf("text output missing %q:\n%s", want, text)
 		}
@@ -75,13 +77,47 @@ func TestRun_UnreadableInput(t *testing.T) {
 	}
 }
 
-func TestRun_NoDiscrepanciesNoSentinel(t *testing.T) {
-	// Reconciling a file against itself with matching column layouts still yields
-	// findings only if the layouts differ; here we assert the happy path returns
-	// nil when fail-on-discrepancy is off regardless of content.
+// writeCleanPair writes a PSP and ledger CSV that reconcile with zero
+// discrepancies (one matching transaction on each side) and returns their paths.
+func writeCleanPair(t *testing.T) (pspPath, ledgerPath string) {
+	t.Helper()
+	dir := t.TempDir()
+	pspPath = filepath.Join(dir, "psp.csv")
+	ledgerPath = filepath.Join(dir, "ledger.csv")
+	psp := "transaction_id,amount,fee,currency,status,settled_at\nTXN-1,100.00,3.00,USD,settled,2026-01-15T10:00:00Z\n"
+	ledger := "psp_reference,entry_id,amount,fee,currency,status,booked_at\nTXN-1,L-1,100.00,3.00,USD,settled,2026-01-15\n"
+	if err := os.WriteFile(pspPath, []byte(psp), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(ledgerPath, []byte(ledger), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	return pspPath, ledgerPath
+}
+
+func TestRun_CleanMatchReportsZeroDiscrepancies(t *testing.T) {
+	psp, ledger := writeCleanPair(t)
 	var out bytes.Buffer
-	err := run([]string{"--psp", pspFixture, "--ledger", ledgerFixture}, &out)
-	if err != nil {
-		t.Fatalf("run without fail flag should not error: %v", err)
+	if err := run([]string{"--psp", psp, "--ledger", ledger}, &out); err != nil {
+		t.Fatalf("run: %v", err)
+	}
+	text := out.String()
+	if !strings.Contains(text, "Discrepancies:    0") || !strings.Contains(text, "fully reconciled") {
+		t.Errorf("expected a clean report, got:\n%s", text)
+	}
+}
+
+func TestRun_CleanMatchDoesNotTripFailOnDiscrepancy(t *testing.T) {
+	psp, ledger := writeCleanPair(t)
+	var out bytes.Buffer
+	if err := run([]string{"--psp", psp, "--ledger", ledger, "--fail-on-discrepancy"}, &out); err != nil {
+		t.Fatalf("clean match must not return the discrepancy sentinel: %v", err)
+	}
+}
+
+func TestRun_HelpExitsZero(t *testing.T) {
+	var out bytes.Buffer
+	if err := run([]string{"--help"}, &out); err != nil {
+		t.Errorf("--help should return nil (exit 0), got %v", err)
 	}
 }

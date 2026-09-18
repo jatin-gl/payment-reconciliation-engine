@@ -34,7 +34,10 @@ guess, the engine emits a `DUPLICATE_IN_PSP` / `DUPLICATE_IN_LEDGER` finding for
 that key and does **not** also emit amount/fee/status findings for it. This keeps
 findings unambiguous and avoids double-reporting. Duplicates are a real and
 important reconciliation problem (double-settlement, double-booking), so they are
-surfaced as their own high-severity type.
+surfaced as their own type. Their monetary impact is the **sum of all
+occurrences' amounts** (the full double-counted exposure, not just the first
+row), and that aggregate runs through the same severity escalation — so two
+duplicated large settlements can be reported as `critical`.
 
 ## Step 3 — One-sided keys
 
@@ -69,10 +72,10 @@ Base severity per type, then escalation by absolute monetary impact:
 |---|---|---|
 | `CURRENCY_MISMATCH` | critical | — |
 | `MISSING_IN_LEDGER` / `MISSING_IN_PSP` | high | → critical at/above the critical threshold |
-| `DUPLICATE_IN_*` | high | — |
+| `DUPLICATE_IN_*` | high | → critical by aggregate impact (sum of all occurrences) |
 | `AMOUNT_MISMATCH` | medium | → high / critical by impact |
 | `STATUS_MISMATCH` | medium | — |
-| `FEE_MISMATCH` | low | → high by impact |
+| `FEE_MISMATCH` | low | → high / critical by impact |
 
 Thresholds (`HighImpactMinor`, `CriticalImpactMinor`) are configurable
 (`--high`, `--critical`; defaults \$100 and \$1,000). Escalation never

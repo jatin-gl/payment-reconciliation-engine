@@ -87,6 +87,51 @@ TXN-1,105.00,3.00,USD,teleported,2026-01-15T10:00:00Z
 	}
 }
 
+func TestParseCSV_StripsUTF8BOM(t *testing.T) {
+	// Excel/Windows exports often prepend a BOM to the first header cell.
+	in := "\ufefftransaction_id,amount,fee,currency,status,settled_at\n" +
+		"TXN-1,10.00,0,USD,settled,2026-01-15\n"
+	got, err := ParseCSV(strings.NewReader(in), model.SourcePSP, DefaultPSPColumns(), DefaultStatusMap())
+	if err != nil {
+		t.Fatalf("a BOM-prefixed header should still parse: %v", err)
+	}
+	if got[0].MatchKey != "TXN-1" {
+		t.Errorf("match key = %q, want TXN-1", got[0].MatchKey)
+	}
+}
+
+func TestParseCSV_DuplicateHeaderIsError(t *testing.T) {
+	in := "transaction_id,amount,amount,currency\nTXN-1,10.00,99.00,USD\n"
+	_, err := ParseCSV(strings.NewReader(in), model.SourcePSP, DefaultPSPColumns(), DefaultStatusMap())
+	if err == nil {
+		t.Fatal("a duplicate header must error, not silently pick one column")
+	}
+	if !strings.Contains(err.Error(), "duplicate") {
+		t.Errorf("error should mention the duplicate column, got: %v", err)
+	}
+}
+
+func TestParseCSV_EmptyMatchKeyIsError(t *testing.T) {
+	cm := ColumnMap{MatchKey: "ref", ExternalID: "ref", Amount: "amt", Currency: "ccy"}
+	in := "ref,amt,ccy\n,10.00,USD\n"
+	_, err := ParseCSV(strings.NewReader(in), model.SourcePSP, cm, DefaultStatusMap())
+	if err == nil {
+		t.Fatal("an empty match key must error rather than reconcile against a blank reference")
+	}
+}
+
+func TestParseCSV_CapturesRawStatusForUnmapped(t *testing.T) {
+	in := "transaction_id,amount,fee,currency,status,settled_at\n" +
+		"TXN-1,10.00,0,USD,voided,2026-01-15\n"
+	got, err := ParseCSV(strings.NewReader(in), model.SourcePSP, DefaultPSPColumns(), DefaultStatusMap())
+	if err != nil {
+		t.Fatalf("ParseCSV: %v", err)
+	}
+	if got[0].Status != model.StatusUnknown || got[0].RawStatus != "voided" {
+		t.Errorf("expected unknown status with raw 'voided', got %+v", got[0])
+	}
+}
+
 func TestParseCSV_OptionalFeeAndTimestampOmitted(t *testing.T) {
 	// A minimal layout without fee or timestamp columns should still parse.
 	cm := ColumnMap{MatchKey: "ref", ExternalID: "ref", Amount: "amt", Currency: "ccy"}

@@ -83,8 +83,8 @@ of the engine is that a one-cent drift is a real, detectable finding.
 | `FEE_MISMATCH` | Matched, processor fee differs | PSP fee − ledger fee |
 | `STATUS_MISMATCH` | Matched, lifecycle status differs | 0 |
 | `CURRENCY_MISMATCH` | Matched, currency differs (always `critical`) | 0 |
-| `DUPLICATE_IN_PSP` | Same key appears more than once in the PSP file | first record's amount |
-| `DUPLICATE_IN_LEDGER` | Same key appears more than once in the ledger | first record's amount |
+| `DUPLICATE_IN_PSP` | Same key appears more than once in the PSP file | sum of all occurrences' amounts |
+| `DUPLICATE_IN_LEDGER` | Same key appears more than once in the ledger | sum of all occurrences' amounts |
 
 ## Severity
 

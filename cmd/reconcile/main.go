@@ -60,6 +60,9 @@ func run(args []string, stdout io.Writer) error {
 	critical := fs.Int64("critical", matcher.DefaultConfig().CriticalImpactMinor, "critical-impact threshold in minor units")
 	failOnDisc := fs.Bool("fail-on-discrepancy", false, "exit with code 2 if any discrepancy is found")
 	if err := fs.Parse(args); err != nil {
+		if errors.Is(err, flag.ErrHelp) {
+			return nil // -h/--help already printed usage; exit 0 by convention
+		}
 		return err
 	}
 	if *format != "text" && *format != "json" {

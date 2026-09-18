@@ -6,6 +6,7 @@ package money
 
 import (
 	"fmt"
+	"math"
 	"strconv"
 	"strings"
 )
@@ -42,21 +43,49 @@ func (m Money) IsZero() bool { return m.amount == 0 }
 // SameCurrency reports whether two amounts share a currency.
 func (m Money) SameCurrency(other Money) bool { return m.currency == other.currency }
 
-// Add returns m+other. It returns an error if the currencies differ, because
-// adding across currencies is a programming error, not a value to silently coerce.
+// Add returns m+other. It errors if the currencies differ (adding across
+// currencies is a programming error, not a value to silently coerce) or if the
+// result would overflow int64 — a wrapped total is exactly the kind of silent
+// corruption this type exists to prevent.
 func (m Money) Add(other Money) (Money, error) {
 	if !m.SameCurrency(other) {
 		return Money{}, fmt.Errorf("money: cannot add %s and %s", m.currency, other.currency)
 	}
-	return Money{amount: m.amount + other.amount, currency: m.currency}, nil
+	sum, ok := addChecked(m.amount, other.amount)
+	if !ok {
+		return Money{}, fmt.Errorf("money: %s + %s overflows int64", m, other)
+	}
+	return Money{amount: sum, currency: m.currency}, nil
 }
 
-// Sub returns m-other, erroring on currency mismatch.
+// Sub returns m-other, erroring on currency mismatch or int64 overflow.
 func (m Money) Sub(other Money) (Money, error) {
 	if !m.SameCurrency(other) {
 		return Money{}, fmt.Errorf("money: cannot subtract %s from %s", other.currency, m.currency)
 	}
-	return Money{amount: m.amount - other.amount, currency: m.currency}, nil
+	diff, ok := subChecked(m.amount, other.amount)
+	if !ok {
+		return Money{}, fmt.Errorf("money: %s - %s overflows int64", m, other)
+	}
+	return Money{amount: diff, currency: m.currency}, nil
+}
+
+// addChecked returns a+b and false on signed int64 overflow.
+func addChecked(a, b int64) (int64, bool) {
+	s := a + b
+	if (a > 0 && b > 0 && s < 0) || (a < 0 && b < 0 && s >= 0) {
+		return 0, false
+	}
+	return s, true
+}
+
+// subChecked returns a-b and false on signed int64 overflow.
+func subChecked(a, b int64) (int64, bool) {
+	d := a - b
+	if (a >= 0 && b < 0 && d < 0) || (a < 0 && b > 0 && d >= 0) {
+		return 0, false
+	}
+	return d, true
 }
 
 // Abs returns the absolute value.
@@ -72,19 +101,45 @@ func (m Money) Equal(other Money) bool {
 	return m.amount == other.amount && m.currency == other.currency
 }
 
-// String renders the amount with two implied decimal places for the common case.
-// It is a display helper, not a settlement format; downstream systems should read
-// Amount() and Currency() directly.
+// minorUnitDigits holds the ISO-4217 currencies whose minor-unit exponent is not
+// the default of 2. Anything not listed renders with two decimals.
+var minorUnitDigits = map[string]int{
+	// Zero-decimal currencies (the amount is already in whole units).
+	"JPY": 0, "KRW": 0, "VND": 0, "CLP": 0, "ISK": 0, "XOF": 0, "XAF": 0,
+	"XPF": 0, "BIF": 0, "DJF": 0, "GNF": 0, "KMF": 0, "PYG": 0, "RWF": 0,
+	"UGX": 0, "VUV": 0,
+	// Three-decimal currencies.
+	"BHD": 3, "KWD": 3, "OMR": 3, "TND": 3, "JOD": 3, "IQD": 3, "LYD": 3,
+}
+
+// Exponent returns the number of minor-unit digits for an ISO-4217 currency
+// (2 for USD/EUR, 0 for JPY, 3 for BHD/KWD). Unknown currencies default to 2.
+func Exponent(currency string) int {
+	if d, ok := minorUnitDigits[strings.ToUpper(currency)]; ok {
+		return d
+	}
+	return 2
+}
+
+// String renders the amount using the currency's minor-unit exponent (so JPY
+// shows no decimals and BHD shows three). It is a display helper, not a
+// settlement format; downstream systems should read Amount() and Currency().
 func (m Money) String() string {
+	exp := Exponent(m.currency)
 	sign := ""
 	a := m.amount
 	if a < 0 {
 		sign = "-"
 		a = -a
 	}
-	major := a / 100
-	minor := a % 100
-	return fmt.Sprintf("%s%d.%02d %s", sign, major, minor, m.currency)
+	if exp == 0 {
+		return fmt.Sprintf("%s%d %s", sign, a, m.currency)
+	}
+	div := int64(1)
+	for i := 0; i < exp; i++ {
+		div *= 10
+	}
+	return fmt.Sprintf("%s%d.%0*d %s", sign, a/div, exp, a%div, m.currency)
 }
 
 // ParseMinor parses a decimal string like "105.00" into minor units. It supports
@@ -132,6 +187,12 @@ func ParseMinor(s string) (int64, error) {
 		default:
 			return 0, fmt.Errorf("money: amount %q has more than 2 decimal places", s)
 		}
+	}
+	// Guard against int64 overflow. Silently wrapping a large settlement amount
+	// to a wrong (or negative) value would defeat the entire purpose of exact
+	// integer money handling. minor is in [0,99] here.
+	if major > (math.MaxInt64-minor)/100 {
+		return 0, fmt.Errorf("money: amount %q overflows int64", s)
 	}
 	total := major*100 + minor
 	if neg {

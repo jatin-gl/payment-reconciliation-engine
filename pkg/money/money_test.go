@@ -1,6 +1,9 @@
 package money
 
-import "testing"
+import (
+	"math"
+	"testing"
+)
 
 func TestParseMinor(t *testing.T) {
 	tests := []struct {
@@ -18,9 +21,11 @@ func TestParseMinor(t *testing.T) {
 		{"1000000.99", 100000099, false},
 		{"", 0, true},
 		{"abc", 0, true},
-		{"1.234", 0, true}, // more than 2 decimals must error, not round
-		{"1.2.3", 0, true}, // ParseInt on "2.3" fails
-		{"1e3", 0, true},   // scientific notation rejected
+		{"1.234", 0, true},                 // more than 2 decimals must error, not round
+		{"1.2.3", 0, true},                 // Cut splits on the first '.', so "2.3" trips the >2-decimals check
+		{"1e3", 0, true},                   // scientific notation rejected
+		{"100000000000000000.00", 0, true}, // overflows int64 -> must error, never wrap
+		{"92233720368547758.08", 0, true},  // just past MaxInt64 minor units
 	}
 	for _, tt := range tests {
 		got, err := ParseMinor(tt.in)
@@ -79,10 +84,40 @@ func TestString(t *testing.T) {
 		New(-450, "EUR"):  "-4.50 EUR",
 		New(5, "USD"):     "0.05 USD",
 		New(0, "INR"):     "0.00 INR",
+		// Zero-decimal currency: minor units are whole units.
+		New(100, "JPY"):  "100 JPY",
+		New(5000, "KRW"): "5000 KRW",
+		// Three-decimal currency.
+		New(1234, "BHD"): "1.234 BHD",
+		New(-1, "BHD"):   "-0.001 BHD",
 	}
 	for m, want := range tests {
 		if got := m.String(); got != want {
-			t.Errorf("%d.String() = %q, want %q", m.Amount(), got, want)
+			t.Errorf("%d %s .String() = %q, want %q", m.Amount(), m.Currency(), got, want)
 		}
+	}
+}
+
+func TestExponent(t *testing.T) {
+	cases := map[string]int{"USD": 2, "eur": 2, "JPY": 0, "KRW": 0, "BHD": 3, "ZZZ": 2}
+	for ccy, want := range cases {
+		if got := Exponent(ccy); got != want {
+			t.Errorf("Exponent(%q) = %d, want %d", ccy, got, want)
+		}
+	}
+}
+
+func TestAddSubOverflow(t *testing.T) {
+	max := New(math.MaxInt64, "USD")
+	if _, err := max.Add(New(1, "USD")); err == nil {
+		t.Error("Add overflow should error")
+	}
+	min := New(math.MinInt64, "USD")
+	if _, err := min.Sub(New(1, "USD")); err == nil {
+		t.Error("Sub overflow should error")
+	}
+	// A normal add near zero must still succeed.
+	if _, err := New(100, "USD").Add(New(200, "USD")); err != nil {
+		t.Errorf("normal Add should not error: %v", err)
 	}
 }
